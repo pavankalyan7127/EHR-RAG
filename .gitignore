@@ -1,0 +1,117 @@
+﻿# ==========================================
+# Environment & Secret Configurations
+# ==========================================
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
+
+# ==========================================
+# Node.js / Frontend
+# ==========================================
+node_modules/
+frontend/node_modules/
+dist/
+dist-ssr/
+frontend/dist/
+frontend/dist-ssr/
+.vite/
+*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==========================================
+# Python / Backend
+# ==========================================
+__pycache__/
+*/__pycache__/
+*/**/__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Distribution / Packaging
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Vector Store / FAISS / Local Indexes / Models Cache
+*.index
+*.faiss
+faiss_index/
+chroma_db/
+*.pt
+*.bin
+*.safetensors
+*.onnx
+models_cache/
+whisper_cache/
+
+# Databases & Local Data Files
+*.sqlite3
+*.sqlite
+*.db
+*.log
+
+# Unit Tests / Coverage / Linters
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ==========================================
+# Operating System & IDE Files
+# ==========================================
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs & Editors
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
