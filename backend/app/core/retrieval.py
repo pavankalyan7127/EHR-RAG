@@ -1,6 +1,7 @@
 import logging
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple
 from app.core.embeddings import vector_store
+from app.db.repositories import get_ehr_records_by_patient
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ def search_external_knowledge(query: str, top_k: int = 3) -> List[Dict[str, Any]
         raise RuntimeError("Vector store is not initialized.")
 
     query_vector = vector_store.embed_query(query)
-    
+
     # We retrieve up to 3 * top_k vectors from FAISS to ensure we collect top_k external chunks
     # (since the full FAISS index contains both EHR and external chunks in the original Colab order).
     fetch_k = min(max(top_k * 3, 10), len(vector_store.chunks))
@@ -31,40 +32,44 @@ def search_external_knowledge(query: str, top_k: int = 3) -> List[Dict[str, Any]
 
     return retrieved_external_chunks
 
-def retrieve_context(patient_id: str, query: str, top_k_external: int = 3) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+def retrieve_context(patient_id: str, query: str, top_k_external: int = 3) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    Executes hybrid retrieval:
-    1. Guaranteed Direct Lookup: Fetches patient EHR note by patient_id.
-       (Avoids semantic mismatch where a patient asks a question that does not semantically match their record).
-    2. Semantic FAISS Search: Fetches top-k external medical knowledge chunks relevant to the user query.
+    Executes dual-track retrieval:
+    1. Track 1 (Patient EHR): Guaranteed deterministic retrieval of all EHR chunks for patient_id from MongoDB.
+       (Preserves privacy and guarantees complete patient clinical context without vector similarity drift).
+    2. Track 2 (External MedQuAD): Semantic FAISS search for top-k external medical reference chunks.
     """
-    patient_chunk = vector_store.get_patient_chunk(patient_id)
+    patient_records = get_ehr_records_by_patient(patient_id)
     external_chunks = search_external_knowledge(query, top_k=top_k_external)
-    return patient_chunk, external_chunks
+    return patient_records, external_chunks
 
-def build_context_block(patient_chunk: Optional[Dict[str, Any]], external_chunks: List[Dict[str, Any]]) -> str:
+def build_context_block(patient_id: str, patient_records: List[Dict[str, Any]], external_chunks: List[Dict[str, Any]]) -> str:
     """
     Builds a clearly formatted context block separating Patient Record from External Medical Knowledge.
     """
     context_parts = []
 
     # Section 1: Patient Personal EHR
-    if patient_chunk:
+    if patient_records:
+        ehr_blocks = []
+        for rec in patient_records:
+            chunk_id = rec.get("chunk_id") or rec.get("_id", "ehr_unknown")
+            content = (rec.get("content") or rec.get("text") or "").strip()
+            ehr_blocks.append(f"[Chunk ID: {chunk_id}]\n{content}")
+        
         context_parts.append(
-            f"=== PATIENT EHR RECORD (Patient ID: {patient_chunk.get('patient_id')}) ===\n"
-            f"[Chunk ID: {patient_chunk.get('chunk_id')}]\n"
-            f"{patient_chunk.get('text', '').strip()}"
+            f"=== PATIENT EHR RECORD (Patient ID: {patient_id}) ===\n" + "\n\n".join(ehr_blocks)
         )
     else:
-        context_parts.append("=== PATIENT EHR RECORD ===\n[No record found for this patient ID]")
+        context_parts.append(f"=== PATIENT EHR RECORD (Patient ID: {patient_id}) ===\n[No record found for this patient ID]")
 
     # Section 2: External Medical Knowledge Base
-    context_parts.append("\n=== EXTERNAL MEDICAL KNOWLEDGE BASE ===")
+    context_parts.append("=== EXTERNAL MEDICAL KNOWLEDGE BASE ===")
     if external_chunks:
         for idx, chunk in enumerate(external_chunks, 1):
             context_parts.append(
                 f"[Source {idx} - Chunk ID: {chunk.get('chunk_id')}]\n"
-                f"{chunk.get('text', '').strip()}"
+                f"{(chunk.get('text') or chunk.get('content') or '').strip()}"
             )
     else:
         context_parts.append("[No external knowledge retrieved]")

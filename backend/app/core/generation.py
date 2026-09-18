@@ -1,3 +1,4 @@
+import time
 import logging
 from typing import List, Optional
 from google import genai
@@ -64,24 +65,33 @@ def build_conversation_prompt(
 def generate_answer(
     context_block: str,
     history: List[ChatMessage],
-    message: str
+    message: str,
+    max_retries: int = 3
 ) -> str:
     """
     Calls Google Gemini API using google-genai SDK to generate a grounded response.
+    Includes retry with backoff for transient 503/429 spikes.
     """
     client = get_genai_client()
     full_prompt = build_conversation_prompt(context_block, history, message)
 
-    try:
-        response = client.models.generate_content(
-            model=GEMINI_MODEL_NAME,
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                temperature=0.2,
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL_NAME,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.2,
+                )
             )
-        )
-        return response.text.strip() if response.text else "I could not generate a response based on the provided records."
-    except Exception as e:
-        logger.error(f"Error calling Gemini API: {str(e)}", exc_info=True)
-        raise RuntimeError(f"Gemini API Error: {str(e)}")
+            return response.text.strip() if response.text else "I could not generate a response based on the provided records."
+        except Exception as e:
+            err_str = str(e)
+            if ("503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str) and attempt < max_retries - 1:
+                sleep_time = (attempt + 1) * 2
+                logger.warning(f"Gemini API transient error (attempt {attempt + 1}/{max_retries}): {err_str}. Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+                continue
+            logger.error(f"Error calling Gemini API: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Gemini API Error: {str(e)}")

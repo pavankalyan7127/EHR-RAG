@@ -1,11 +1,10 @@
 import os
-import shutil
 import tempfile
 import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
-from app.models.schemas import VoiceChatResponse, ChatRequest
+from app.models.schemas import VoiceChatResponse
 from app.core.asr import asr_manager
-from app.routes.chat import chat_endpoint
+from app.routes.chat import process_chat_query
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="", tags=["Voice Chat"])
@@ -28,7 +27,6 @@ async def voice_chat_endpoint(
 
     temp_file_path = None
     try:
-        # Read uploaded bytes
         audio_bytes = await audio.read()
         logger.info(f"Received audio upload '{audio.filename}' of size {len(audio_bytes)} bytes.")
 
@@ -45,19 +43,17 @@ async def voice_chat_endpoint(
 
         transcribed_text = asr_manager.transcribe_audio_file(temp_file_path)
 
-
-        if not transcribed_text:
+        if not transcribed_text or not transcribed_text.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Could not transcribe any speech from the provided audio."
             )
 
-        chat_request = ChatRequest(
+        chat_response = await process_chat_query(
             session_id=session_id,
             patient_id=patient_id,
-            message=transcribed_text
+            message_text=transcribed_text
         )
-        chat_response = await chat_endpoint(chat_request)
 
         return VoiceChatResponse(
             session_id=chat_response.session_id,

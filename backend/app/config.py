@@ -17,6 +17,9 @@ FAISS_INDEX_PATH = DATA_DIR / "faiss_index.bin"
 
 WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL_NAME", "base")
 
+MONGODB_URI = os.getenv("MONGODB_URI", "")
+MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "ehr_rag_db")
+
 raw_cors = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173")
 CORS_ORIGINS = [origin.strip() for origin in raw_cors.split(",") if origin.strip()]
 
