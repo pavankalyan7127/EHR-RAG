@@ -25,6 +25,12 @@ def test_voice():
     print("\n--- TEST 12: Voice Chat Pipeline Verification ---")
     wav_bytes = create_dummy_wav_bytes()
     with TestClient(app) as client:
+        # Authenticate as P001
+        login_res = client.post("/auth/login", json={"patient_id": "P001", "password": "P001"})
+        assert login_res.status_code == 200
+        token = login_res.json()["access_token"]
+        auth_headers = {"Authorization": f"Bearer {token}"}
+
         files = {
             "audio": ("test_voice.wav", wav_bytes, "audio/wav")
         }
@@ -33,7 +39,7 @@ def test_voice():
             "patient_id": "P001"
         }
         # Note: Silent audio will produce empty transcription or 400 Bad Request
-        res = client.post("/voice-chat", data=data, files=files)
+        res = client.post("/voice-chat", data=data, files=files, headers=auth_headers)
         print("Voice Chat with silent audio response status:", res.status_code)
         print("Response:", res.json())
         # Silent audio correctly triggers the 400 validation: "Could not transcribe any speech from the provided audio."

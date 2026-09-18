@@ -1,25 +1,75 @@
 /**
  * API Client Module for Multimodal EHR RAG Assistant Backend
- * All network calls to the backend are encapsulated in this module.
+ * Handles patient authentication, session management, and RAG chat interactions.
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+const TOKEN_KEY = 'ehr_access_token';
+const PATIENT_ID_KEY = 'ehr_patient_id';
+
 /**
- * Helper to handle HTTP responses and extract JSON or descriptive error messages.
+ * Token Storage Helpers
+ */
+export function getAuthToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setAuthSession(token, patientId) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  if (patientId) localStorage.setItem(PATIENT_ID_KEY, patientId);
+}
+
+export function clearAuthSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(PATIENT_ID_KEY);
+}
+
+export function getStoredPatientId() {
+  return localStorage.getItem(PATIENT_ID_KEY);
+}
+
+export function isAuthenticated() {
+  return Boolean(getAuthToken());
+}
+
+/**
+ * Builds request headers with JWT Bearer token when authenticated
+ */
+function getAuthHeaders(contentType = 'application/json') {
+  const headers = {
+    'Accept': 'application/json',
+  };
+  if (contentType) {
+    headers['Content-Type'] = contentType;
+  }
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+/**
+ * Response Handler with error extraction and 401 interceptor
  */
 async function handleResponse(response) {
   if (!response.ok) {
+    if (response.status === 401) {
+      clearAuthSession();
+      window.dispatchEvent(new CustomEvent('ehr-auth-expired'));
+    }
+
     let errorMessage = `HTTP Error ${response.status}: ${response.statusText}`;
     try {
       const errorData = await response.json();
       if (errorData && errorData.detail) {
-        errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
+        errorMessage = typeof errorData.detail === 'string'
+          ? errorData.detail
           : JSON.stringify(errorData.detail);
       }
     } catch {
-      // If response body is not JSON, use the status text
+      // Body not JSON
     }
     throw new Error(errorMessage);
   }
@@ -27,27 +77,118 @@ async function handleResponse(response) {
 }
 
 /**
- * 1. GET /patients
- * Fetches the list of all registered patient IDs in the EHR database.
- * @returns {Promise<{ patients: string[] }>}
+ * =============================================================================
+ * Authentication API
+ * =============================================================================
  */
-export async function getPatients() {
-  const response = await fetch(`${API_BASE_URL}/patients`, {
-    method: 'GET',
+
+/**
+ * Authenticates a patient with patient_id and password.
+ * @param {Object} credentials
+ * @param {string} credentials.patientId
+ * @param {string} credentials.password
+ * @returns {Promise<{ access_token: string, token_type: string, patient_id: string }>}
+ */
+export async function login({ patientId, password }) {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
     headers: {
+      'Content-Type': 'application/json',
       'Accept': 'application/json',
     },
+    body: JSON.stringify({
+      patient_id: patientId.trim(),
+      password: password,
+    }),
+  });
+
+  const data = await handleResponse(response);
+  setAuthSession(data.access_token, data.patient_id);
+  return data;
+}
+
+/**
+ * Fetches the authenticated patient's profile.
+ * @returns {Promise<{ patient_id: string, name: string, age: number|null, gender: string|null }>}
+ */
+export async function getPatientProfile() {
+  const response = await fetch(`${API_BASE_URL}/patients/me`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
   });
   return handleResponse(response);
 }
 
 /**
- * 2. POST /chat
- * Sends a text query with session and patient context to the RAG pipeline.
+ * =============================================================================
+ * Session History API (Patient-Isolated)
+ * =============================================================================
+ */
+
+/**
+ * Fetches all chat sessions belonging strictly to the authenticated patient.
+ * @returns {Promise<Array<{ session_id: string, patient_id: string, title: string, created_at: string, updated_at: string }>>}
+ */
+export async function getChatSessions() {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+/**
+ * Creates a new chat session for the authenticated patient.
+ * @param {string} [title="New Conversation"]
+ * @returns {Promise<{ session_id: string, patient_id: string, title: string, created_at: string, updated_at: string }>}
+ */
+export async function createChatSession(title = 'New Conversation') {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ title }),
+  });
+  return handleResponse(response);
+}
+
+/**
+ * Retrieves the full message history for a specific session ID belonging to the authenticated patient.
+ * @param {string} sessionId
+ * @returns {Promise<{ session_id: string, patient_id: string, title: string, messages: Array<{ role: string, content: string, sources?: string[] }> }>}
+ */
+export async function getSessionDetails(sessionId) {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'GET',
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+/**
+ * Deletes a chat session and all its messages.
+ * @param {string} sessionId
+ * @returns {Promise<{ session_id: string, message: string, cleared: boolean }>}
+ */
+export async function deleteChatSession(sessionId) {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+/**
+ * =============================================================================
+ * Chat & Voice API
+ * =============================================================================
+ */
+
+/**
+ * Sends a text query with session ID to the RAG pipeline.
+ * Patient identity is derived strictly by the backend from the JWT.
  * @param {Object} params
- * @param {string} params.sessionId - Current multi-turn session UUID
- * @param {string} params.patientId - Patient identifier (e.g. 'P001')
- * @param {string} params.message - User question text
+ * @param {string} params.sessionId
+ * @param {string} params.message
  * @returns {Promise<{
  *   session_id: string,
  *   answer: string,
@@ -56,16 +197,12 @@ export async function getPatients() {
  *   history: Array<{ role: 'user'|'assistant', content: string }>
  * }>}
  */
-export async function sendChatMessage({ sessionId, patientId, message }) {
+export async function sendChatMessage({ sessionId, message }) {
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       session_id: sessionId,
-      patient_id: patientId,
       message: message.trim(),
     }),
   });
@@ -73,48 +210,58 @@ export async function sendChatMessage({ sessionId, patientId, message }) {
 }
 
 /**
- * 3. POST /voice-chat
- * Sends an audio file (via multipart/form-data) for speech-to-text transcription + RAG answer.
+ * Sends an audio file for speech-to-text transcription + RAG answer.
+ * Patient identity is derived strictly by the backend from the JWT.
  * @param {Object} params
- * @param {string} params.sessionId - Current multi-turn session UUID
- * @param {string} params.patientId - Patient identifier (e.g. 'P001')
- * @param {File|Blob} params.audioBlob - Recorded or uploaded audio file
- * @param {string} [params.filename] - Optional filename for the audio upload
- * @returns {Promise<{
- *   session_id: string,
- *   transcribed_text: string,
- *   answer: string,
- *   patient_sources: string[],
- *   external_sources: string[],
- *   history: Array<{ role: 'user'|'assistant', content: string }>
- * }>}
+ * @param {string} params.sessionId
+ * @param {File|Blob} params.audioBlob
+ * @param {string} [params.filename]
  */
-export async function sendVoiceChatMessage({ sessionId, patientId, audioBlob, filename = 'voice_query.wav' }) {
+export async function sendVoiceChatMessage({ sessionId, audioBlob, filename = 'voice_query.wav' }) {
   const formData = new FormData();
   formData.append('session_id', sessionId);
-  formData.append('patient_id', patientId);
   formData.append('audio', audioBlob, filename);
+
+  const token = getAuthToken();
+  const headers = {
+    'Accept': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   const response = await fetch(`${API_BASE_URL}/voice-chat`, {
     method: 'POST',
+    headers: headers,
     body: formData,
-    // Note: Fetch automatically sets the multipart/form-data boundary when passing FormData
   });
   return handleResponse(response);
 }
 
 /**
- * 4. DELETE /chat/{session_id}
- * Resets/clears conversation history on the backend for the given session ID.
- * @param {string} sessionId
- * @returns {Promise<{ session_id: string, message: string, cleared: boolean }>}
+ * Resolves an audio URL or relative path to a full streaming URL with authentication token attached.
+ * Supports native HTML5 <audio> streaming playback across sessions.
+ * @param {string} audioUrl
+ * @returns {string|null}
  */
-export async function clearSessionHistory(sessionId) {
-  const response = await fetch(`${API_BASE_URL}/chat/${encodeURIComponent(sessionId)}`, {
-    method: 'DELETE',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-  return handleResponse(response);
+export function resolveAudioUrl(audioUrl) {
+  if (!audioUrl) return null;
+  const token = getAuthToken();
+  let fullUrl = audioUrl.startsWith('http') ? audioUrl : `${API_BASE_URL}${audioUrl.startsWith('/') ? '' : '/'}${audioUrl}`;
+  if (token && !fullUrl.includes('token=')) {
+    const delimiter = fullUrl.includes('?') ? '&' : '?';
+    fullUrl = `${fullUrl}${delimiter}token=${encodeURIComponent(token)}`;
+  }
+  return fullUrl;
 }
+
+/**
+ * Returns the stream URL for a specific message audio recording with authentication token attached.
+ * @param {string} messageId
+ * @returns {string|null}
+ */
+export function getMessageAudioUrl(messageId) {
+  if (!messageId) return null;
+  return resolveAudioUrl(`/chat/messages/${encodeURIComponent(messageId)}/audio`);
+}
+

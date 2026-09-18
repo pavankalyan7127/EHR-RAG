@@ -9,3 +9,5 @@ openai-whisper>=20231117
 python-multipart>=0.0.9
 numpy>=1.26.0
 pymongo>=4.6.0
+argon2-cffi>=23.1.0
+pyjwt>=2.8.0

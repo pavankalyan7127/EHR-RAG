@@ -6,6 +6,17 @@ from pydantic import BaseModel, Field, ConfigDict
 # Database Document Schemas
 # ==============================================================================
 
+class UserDocument(BaseModel):
+    id: str = Field(..., alias="_id", description="Primary key, typically the patient_id")
+    patient_id: str = Field(..., description="Unique patient identifier, e.g. 'P001'")
+    password_hash: str = Field(..., description="Argon2 password hash")
+    role: str = Field(default="patient", description="User role ('patient', 'admin')")
+    is_active: bool = Field(default=True, description="Account active status")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Creation timestamp in UTC")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class PatientDocument(BaseModel):
     id: str = Field(..., alias="_id", description="Unique patient identifier, e.g. 'P001'")
     name: str = Field(..., description="Patient name or display label")
@@ -31,6 +42,7 @@ class EHRRecordDocument(BaseModel):
 class SessionDocument(BaseModel):
     id: str = Field(..., alias="_id", description="Unique session UUID")
     patient_id: str = Field(..., description="Identifier of the patient bound to this session")
+    title: Optional[str] = Field(default="New Conversation", description="Descriptive or generated session title")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Session creation timestamp in UTC")
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Last active timestamp in UTC")
     status: str = Field(default="active", description="Session status ('active', 'archived')")
@@ -44,6 +56,8 @@ class MessageDocument(BaseModel):
     patient_id: str = Field(..., description="Patient identifier associated with the session")
     role: Literal["user", "assistant"] = Field(..., description="Role of the message sender")
     content: str = Field(..., description="Message text content")
+    input_type: str = Field(default="text", description="Input modality ('text', 'voice')")
+    audio_file_id: Optional[str] = Field(None, description="GridFS file ID for original audio")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Timestamp of the message in UTC")
     sources: List[str] = Field(default_factory=list, description="List of source chunk IDs used for grounding provenance")
 
@@ -54,15 +68,41 @@ class MessageDocument(BaseModel):
 # API Request / Response Schemas
 # ==============================================================================
 
+# Authentication Schemas
+class LoginRequest(BaseModel):
+    patient_id: str = Field(..., min_length=1, description="Patient ID / Patient Number, e.g. 'P017'")
+    password: str = Field(..., min_length=1, description="Patient password")
+
+
+class TokenResponse(BaseModel):
+    access_token: str = Field(..., description="JWT Bearer access token")
+    token_type: str = Field(default="bearer", description="Token type")
+    patient_id: str = Field(..., description="Authenticated patient identifier")
+
+
+class PatientProfileResponse(BaseModel):
+    patient_id: str = Field(..., description="Patient identifier")
+    name: str = Field(..., description="Patient full name")
+    age: Optional[int] = Field(None, description="Patient age")
+    gender: Optional[str] = Field(None, description="Patient gender")
+
+
+# Chat Schemas
 class ChatMessage(BaseModel):
+    id: Optional[str] = Field(None, description="Unique message identifier")
     role: Literal["user", "assistant"] = Field(..., description="Role of the message sender")
     content: str = Field(..., description="Content of the message")
+    input_type: Optional[str] = Field(default="text", description="Input modality ('text', 'voice')")
+    audio_file_id: Optional[str] = Field(None, description="GridFS audio file ID")
+    audio_url: Optional[str] = Field(None, description="Audio playback URL")
+    timestamp: Optional[datetime] = Field(None, description="Optional message timestamp")
+    sources: Optional[List[str]] = Field(default_factory=list, description="Grounding sources")
 
 
 class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, description="Unique session identifier for multi-turn chat")
-    patient_id: str = Field(..., min_length=1, description="Identifier of the patient whose record is being queried")
     message: str = Field(..., min_length=1, description="User question or query text")
+    patient_id: Optional[str] = Field(None, description="Optional patient ID (derived automatically from auth token)")
 
 
 class ChatResponse(BaseModel):
@@ -75,6 +115,28 @@ class ChatResponse(BaseModel):
 
 class VoiceChatResponse(ChatResponse):
     transcribed_text: str = Field(..., description="Transcribed query recognized by Whisper ASR")
+    audio_file_id: Optional[str] = Field(None, description="GridFS audio file ID")
+    audio_url: Optional[str] = Field(None, description="Audio playback URL for the original recording")
+
+
+# Session Management Schemas
+class CreateSessionRequest(BaseModel):
+    title: Optional[str] = Field(default="New Conversation", description="Initial session title")
+
+
+class SessionSummary(BaseModel):
+    session_id: str = Field(..., description="Unique session identifier")
+    patient_id: str = Field(..., description="Associated patient identifier")
+    title: str = Field(..., description="Session display title")
+    created_at: datetime = Field(..., description="Session creation timestamp")
+    updated_at: datetime = Field(..., description="Session last updated timestamp")
+
+
+class SessionDetailResponse(BaseModel):
+    session_id: str = Field(..., description="Unique session identifier")
+    patient_id: str = Field(..., description="Associated patient identifier")
+    title: str = Field(..., description="Session title")
+    messages: List[ChatMessage] = Field(default_factory=list, description="Chronological message history")
 
 
 class DeleteSessionResponse(BaseModel):

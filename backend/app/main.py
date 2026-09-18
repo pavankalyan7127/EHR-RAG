@@ -6,6 +6,7 @@ from app.config import CORS_ORIGINS
 from app.db.connection import db_manager
 from app.core.embeddings import vector_store
 from app.core.asr import asr_manager
+from app.routes.auth import router as auth_router
 from app.routes.chat import router as chat_router
 from app.routes.voice import router as voice_router
 from app.routes.patients import router as patients_router
@@ -64,6 +65,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(voice_router)
 app.include_router(patients_router)

@@ -764,3 +764,623 @@ body {
 .btn-stop-recording:hover {
   background-color: #dc2626;
 }
+
+/* ==========================================================================
+   Portal Layout & Two-Pane Structure
+   ========================================================================== */
+
+.portal-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--bg-app);
+  overflow: hidden;
+}
+
+.portal-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.portal-chat-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  background-color: var(--bg-surface);
+  overflow: hidden;
+  position: relative;
+}
+
+/* ==========================================================================
+   Chat History Sidebar
+   ========================================================================== */
+
+.chat-sidebar {
+  width: 290px;
+  background-color: #f8fafc;
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.25s ease, width 0.25s ease;
+  z-index: 20;
+}
+
+.chat-sidebar.closed {
+  width: 0;
+  transform: translateX(-100%);
+  overflow: hidden;
+  border-right: none;
+}
+
+.sidebar-patient-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background-color: #f1f5f9;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.patient-avatar-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background-color: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+}
+
+.patient-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-patient-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.sidebar-patient-id {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.sidebar-action-container {
+  padding: 14px 16px;
+}
+
+.btn-sidebar-new-chat {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: var(--primary);
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn-sidebar-new-chat:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.btn-sidebar-new-chat:active {
+  transform: translateY(0);
+}
+
+.sidebar-history-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px 6px;
+}
+
+.history-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-light);
+  text-transform: uppercase;
+}
+
+.history-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  background-color: #e2e8f0;
+  color: var(--text-muted);
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+}
+
+.history-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.15s;
+  position: relative;
+}
+
+.history-item:hover {
+  background-color: #f1f5f9;
+}
+
+.history-item.active {
+  background-color: var(--primary-light);
+  border: 1px solid #bae6fd;
+}
+
+.history-item .item-icon {
+  font-size: 1rem;
+  opacity: 0.7;
+}
+
+.history-item.active .item-icon {
+  opacity: 1;
+}
+
+.history-item .item-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.history-item .item-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item.active .item-title {
+  color: var(--primary-dark);
+}
+
+.history-item .item-time {
+  font-size: 0.73rem;
+  color: var(--text-muted);
+}
+
+.btn-delete-session {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  font-size: 0.85rem;
+  padding: 4px;
+  border-radius: 4px;
+  transition: opacity 0.2s, background-color 0.2s;
+}
+
+.history-item:hover .btn-delete-session {
+  opacity: 0.7;
+}
+
+.btn-delete-session:hover {
+  opacity: 1 !important;
+  background-color: #fee2e2;
+}
+
+.history-empty,
+.history-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  gap: 6px;
+}
+
+.empty-chat-icon {
+  font-size: 2rem;
+  opacity: 0.5;
+  margin-bottom: 4px;
+}
+
+.history-empty p {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.empty-subtext {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.spinner-mini {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+   Header & Status Bar Styles
+   ========================================================================== */
+
+.sidebar-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text-muted);
+  margin-right: 12px;
+  transition: background-color 0.15s;
+}
+
+.sidebar-toggle-btn:hover {
+  background-color: #f1f5f9;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.patient-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #f8fafc;
+  border: 1px solid var(--border-color);
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  background-color: var(--accent);
+  border-radius: 50%;
+}
+
+.patient-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.patient-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.patient-id-tag {
+  font-size: 0.76rem;
+  background-color: #e2e8f0;
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.btn-logout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: transparent;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-logout:hover {
+  background-color: #fee2e2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+/* ==========================================================================
+   Login Page Styles
+   ========================================================================== */
+
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #bae6fd 100%);
+  padding: 20px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg), 0 20px 25px -5px rgba(0, 0, 0, 0.05);
+  padding: 36px 32px;
+  border: 1px solid #e0f2fe;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 26px;
+}
+
+.login-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  background-color: var(--primary-light);
+  border-radius: 50%;
+  margin-bottom: 12px;
+}
+
+.login-icon {
+  font-size: 2.2rem;
+}
+
+.login-header h1 {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.login-subtitle {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.login-alert-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.86rem;
+  font-weight: 500;
+  margin-bottom: 18px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.form-group input {
+  padding: 11px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-group input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.btn-login {
+  margin-top: 6px;
+  background-color: var(--primary);
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-login:hover:not(:disabled) {
+  background-color: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.btn-login:disabled {
+  background-color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.login-spinner-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.spinner-dot {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.login-demo-box {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--border-color);
+  text-align: center;
+}
+
+.demo-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.demo-chips {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.demo-chip {
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-full);
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.demo-chip:hover {
+  background-color: var(--primary-light);
+  border-color: #7dd3fc;
+  color: var(--primary-dark);
+}
+
+.demo-note {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   Voice Message Playback & Persistent Audio Storage Styles
+   ========================================================================== */
+
+.voice-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  margin-bottom: 8px;
+  border: 1px solid #bae6fd;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.user-bubble .voice-tag {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.audio-player-wrapper {
+  margin: 6px 0 10px 0;
+  width: 100%;
+}
+
+.custom-audio-player {
+  width: 100%;
+  height: 38px;
+  border-radius: var(--radius-full);
+  outline: none;
+}
+
+.user-bubble .custom-audio-player {
+  filter: contrast(95%);
+}
+
+.voice-transcript-block {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.transcript-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.85;
+}
+
+.user-bubble .transcript-label {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.transcript-text {
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+

@@ -10,7 +10,8 @@ export function MessageBubble({ message }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
-  const { role, content, timestamp, patientSources, externalSources, isVoice } = message;
+  const { role, content, timestamp, patientSources, externalSources } = message;
+  const isVoice = message.isVoice || message.inputType === 'voice' || Boolean(message.audioUrl || message.audioFileId);
 
   // System error bubble
   if (role === 'system_error') {
@@ -102,12 +103,12 @@ export function MessageBubble({ message }) {
         <div className={`message-bubble ${isUser ? 'user-bubble' : 'assistant-bubble'}`}>
           {isVoice && (
             <div className="voice-tag">
-              <span>🎙️ Voice Question</span>
+              <span>🎙️ Voice Message</span>
             </div>
           )}
           {message.audioUrl && (
             <div className="audio-player-wrapper">
-              <audio controls src={message.audioUrl} className="custom-audio-player">
+              <audio controls src={message.audioUrl} preload="metadata" className="custom-audio-player">
                 Your browser does not support the audio element.
               </audio>
             </div>
@@ -143,7 +144,14 @@ export function MessageBubble({ message }) {
             </div>
           )}
 
-          <div className="message-content">{content}</div>
+          {isVoice ? (
+            <div className="voice-transcript-block">
+              <span className="transcript-label">Transcript:</span>
+              <div className="transcript-text">{content}</div>
+            </div>
+          ) : (
+            <div className="message-content">{content}</div>
+          )}
           <div className="message-meta">
             <span className="message-time">{timestamp}</span>
           </div>

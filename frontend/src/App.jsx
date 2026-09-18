@@ -1,86 +1,123 @@
-import React, { useState, useEffect } from 'react';
-import { getPatients } from './api/client';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  getAuthToken,
+  getStoredPatientId,
+  clearAuthSession,
+  getPatientProfile,
+} from './api/client';
 import { useChat } from './hooks/useChat';
-import { PatientSelector } from './components/PatientSelector';
+import { Login } from './components/Login';
+import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
 import { InputBar } from './components/InputBar';
 import './styles/App.css';
 
 export function App() {
-  const [patients, setPatients] = useState([]);
-  const [selectedPatient, setSelectedPatient] = useState('');
-  const [isLoadingPatients, setIsLoadingPatients] = useState(true);
-  const [patientError, setPatientError] = useState(null);
+  const [token, setToken] = useState(() => getAuthToken());
+  const [patientId, setPatientId] = useState(() => getStoredPatientId());
+  const [patientProfile, setPatientProfile] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Initialize continuous multi-turn chat hook bound to selected patient
+  const isAuthenticated = Boolean(token && patientId);
+
+  // Initialize patient-isolated chat lifecycle hook
   const {
-    sessionId,
+    sessions,
+    activeSessionId,
     messages,
     isLoading,
+    isLoadingSessions,
+    isLoadingHistory,
+    selectSession,
+    startNewChat,
+    deleteSession,
     sendMessage,
     sendVoiceMessage,
-    startNewChat,
-  } = useChat(selectedPatient);
+  } = useChat(isAuthenticated);
 
-  // Fetch available patients on initial component mount
-  const fetchPatientsList = async () => {
-    setIsLoadingPatients(true);
-    setPatientError(null);
-    try {
-      const data = await getPatients();
-      const patientList = data.patients || [];
-      setPatients(patientList);
-      if (patientList.length > 0 && !selectedPatient) {
-        setSelectedPatient(patientList[0]);
-      }
-    } catch (err) {
-      console.error('Failed to load patients:', err);
-      setPatientError(err.message || 'Could not connect to EHR backend.');
-    } finally {
-      setIsLoadingPatients(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchPatientsList();
+  const handleLogout = useCallback(() => {
+    clearAuthSession();
+    setToken(null);
+    setPatientId(null);
+    setPatientProfile(null);
   }, []);
 
-  // When patient selection changes, reset chat session so contexts do not bleed
-  const handleSelectPatient = (patientId) => {
-    if (patientId !== selectedPatient) {
-      setSelectedPatient(patientId);
-      startNewChat();
+  // Fetch patient profile when authenticated
+  useEffect(() => {
+    if (token) {
+      getPatientProfile()
+        .then((profile) => {
+          setPatientProfile(profile);
+          setPatientId(profile.patient_id);
+        })
+        .catch((err) => {
+          console.warn('Session verification failed:', err);
+          handleLogout();
+        });
     }
+  }, [token, handleLogout]);
+
+  // Listen for auth expiration events from API client
+  useEffect(() => {
+    const onAuthExpired = () => {
+      handleLogout();
+    };
+    window.addEventListener('ehr-auth-expired', onAuthExpired);
+    return () => window.removeEventListener('ehr-auth-expired', onAuthExpired);
+  }, [handleLogout]);
+
+  const handleLoginSuccess = (newPatientId) => {
+    const newToken = getAuthToken();
+    setToken(newToken);
+    setPatientId(newPatientId);
   };
 
+  // If unauthenticated: render dedicated hospital portal login screen
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
-    <div className="app-layout">
-      {/* Top Navigation & Patient Selector */}
-      <PatientSelector
-        patients={patients}
-        selectedPatient={selectedPatient}
-        onSelectPatient={handleSelectPatient}
-        onNewChat={startNewChat}
-        isLoadingPatients={isLoadingPatients}
-        patientError={patientError}
-        onRetryFetchPatients={fetchPatientsList}
+    <div className="portal-app">
+      {/* Top Application Header with Patient Identity & Logout */}
+      <Header
+        patientProfile={patientProfile}
+        patientId={patientId}
+        onLogout={handleLogout}
+        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+        isSidebarOpen={isSidebarOpen}
       />
 
-      {/* Main Continuous Chat Viewport */}
-      <ChatWindow
-        messages={messages}
-        isLoading={isLoading}
-        selectedPatient={selectedPatient}
-        onSelectSuggestedQuestion={(q) => sendMessage(q)}
-      />
+      {/* Main Two-Pane Dashboard: Sidebar (Left) + Chat Window & Input (Right) */}
+      <div className="portal-body">
+        <Sidebar
+          patientId={patientId}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          isLoadingSessions={isLoadingSessions}
+          onSelectSession={selectSession}
+          onNewChat={startNewChat}
+          onDeleteSession={deleteSession}
+          isOpen={isSidebarOpen}
+        />
 
-      {/* Bottom Sticky Input Bar */}
-      <InputBar
-        onSendMessage={sendMessage}
-        onSendVoiceMessage={sendVoiceMessage}
-        isLoading={isLoading}
-        disabled={!selectedPatient || isLoadingPatients}
-      />
+        <div className="portal-chat-area">
+          <ChatWindow
+            messages={messages}
+            isLoading={isLoading || isLoadingHistory}
+            selectedPatient={patientId}
+            onSelectSuggestedQuestion={(q) => sendMessage(q)}
+          />
+
+          <InputBar
+            onSendMessage={sendMessage}
+            onSendVoiceMessage={sendVoiceMessage}
+            isLoading={isLoading}
+            disabled={isLoading || isLoadingHistory}
+          />
+        </div>
+      </div>
     </div>
   );
 }

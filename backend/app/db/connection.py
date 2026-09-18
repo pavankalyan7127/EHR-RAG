@@ -1,7 +1,7 @@
 import re
 import logging
 from typing import Optional
-from pymongo import MongoClient, ASCENDING
+from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.database import Database
 from pymongo.errors import ConnectionFailure, PyMongoError
 from app.config import MONGODB_URI, MONGODB_DATABASE
@@ -102,15 +102,19 @@ class MongoDBManager:
     def init_indexes(self):
         """
         Creates required indexes for collections:
+        - users: patient_id (unique)
         - patients: _id (default), name
         - ehr_records: patient_id, (patient_id, chunk_id)
-        - sessions: patient_id, updated_at
-        - messages: session_id, (session_id, timestamp)
+        - sessions: patient_id, updated_at (descending)
+        - messages: session_id, (session_id, timestamp), (patient_id, session_id)
         """
         if self._db is None:
             return
 
         try:
+            # Users unique index
+            self._db["users"].create_index([("patient_id", ASCENDING)], unique=True, background=True)
+
             # Patients indexes
             self._db["patients"].create_index([("name", ASCENDING)], background=True)
 
@@ -124,12 +128,17 @@ class MongoDBManager:
 
             # Sessions indexes
             self._db["sessions"].create_index([("patient_id", ASCENDING)], background=True)
+            self._db["sessions"].create_index([("patient_id", ASCENDING), ("updated_at", DESCENDING)], background=True)
             self._db["sessions"].create_index([("updated_at", ASCENDING)], background=True)
 
             # Messages indexes
             self._db["messages"].create_index([("session_id", ASCENDING)], background=True)
             self._db["messages"].create_index(
                 [("session_id", ASCENDING), ("timestamp", ASCENDING)],
+                background=True
+            )
+            self._db["messages"].create_index(
+                [("patient_id", ASCENDING), ("session_id", ASCENDING)],
                 background=True
             )
 

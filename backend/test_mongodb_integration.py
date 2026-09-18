@@ -24,10 +24,13 @@ from app.db.repositories import (
 from app.core.embeddings import vector_store
 from app.core.retrieval import search_external_knowledge
 
+from unittest.mock import patch
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("test_mongodb_integration")
 
-def run_tests():
+@patch("app.routes.chat.generate_answer", return_value="Metformin is prescribed for Type 2 diabetes.")
+def run_tests(mock_gen):
     print("\n==================================================")
     print("RUNNING COMPREHENSIVE MONGODB ATLAS INTEGRATION TESTS")
     print("==================================================")
@@ -76,13 +79,18 @@ def run_tests():
 
         # TEST 5 & 6: Create Chat for P001 & Persist Turn in MongoDB
         print("\n--- TEST 5 & 6: Chat Session & Message Persistence ---")
+        login_res = client.post("/auth/login", json={"patient_id": "P001", "password": "P001"})
+        assert login_res.status_code == 200, f"Login failed: {login_res.text}"
+        p001_token = login_res.json()["access_token"]
+        p001_headers = {"Authorization": f"Bearer {p001_token}"}
+
         test_session_id = f"test_session_{uuid.uuid4().hex[:8]}"
         chat_payload = {
             "session_id": test_session_id,
             "patient_id": "P001",
             "message": "What is my current dosage of Metformin?"
         }
-        chat_res = client.post("/chat", json=chat_payload)
+        chat_res = client.post("/chat", json=chat_payload, headers=p001_headers)
         assert chat_res.status_code == 200, f"POST /chat failed: {chat_res.text}"
         chat_data = chat_res.json()
         print(f"Assistant Answer: {chat_data['answer'][:120]}...")
@@ -114,7 +122,7 @@ def run_tests():
             "patient_id": "P001",
             "message": "When is my follow-up appointment?"
         }
-        turn2_res = client.post("/chat", json=turn2_payload)
+        turn2_res = client.post("/chat", json=turn2_payload, headers=p001_headers)
         assert turn2_res.status_code == 200, f"Turn 2 failed: {turn2_res.text}"
         turn2_data = turn2_res.json()
         assert len(turn2_data["history"]) == 4
@@ -129,17 +137,17 @@ def run_tests():
         print("\n--- TEST 9: Session Patient Mismatch Security Rejection ---")
         mismatch_payload = {
             "session_id": test_session_id,
-            "patient_id": "P002", # Trying to use P001's session with P002
+            "patient_id": "P002", # Trying to use P001's session/auth with P002
             "message": "Tell me about my heart condition."
         }
-        mismatch_res = client.post("/chat", json=mismatch_payload)
-        assert mismatch_res.status_code == 400, f"Expected 400 Bad Request, got {mismatch_res.status_code}"
+        mismatch_res = client.post("/chat", json=mismatch_payload, headers=p001_headers)
+        assert mismatch_res.status_code in [400, 403], f"Expected 400 or 403, got {mismatch_res.status_code}"
         print(f"Rejected as expected with detail: {mismatch_res.json().get('detail')}")
         print("[PASS] TEST 9: Cross-patient session hijacking prevented.")
 
         # TEST: DELETE /chat/{session_id}
         print("\n--- TEST: DELETE /chat/{session_id} Session Cleanup ---")
-        del_res = client.delete(f"/chat/{test_session_id}")
+        del_res = client.delete(f"/chat/{test_session_id}", headers=p001_headers)
         assert del_res.status_code == 200
         del_data = del_res.json()
         assert del_data["cleared"] is True
@@ -153,10 +161,10 @@ def run_tests():
         db = db_manager.get_database()
         cols = db.list_collection_names()
         print(f"Collections present in database '{db.name}': {cols}")
-        for req_col in ["patients", "ehr_records", "sessions", "messages"]:
+        for req_col in ["patients", "ehr_records", "sessions", "messages", "users"]:
             assert req_col in cols, f"Missing required collection: {req_col}"
             print(f"Collection '{req_col}' document count: {db[req_col].count_documents({})}")
-        print("[PASS] TEST 13: All 4 MongoDB collections active and indexed.")
+        print("[PASS] TEST 13: All 5 MongoDB collections active and indexed.")
 
 
     print("\n==================================================")
