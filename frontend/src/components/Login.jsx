@@ -20,19 +20,19 @@ export function Login({ onLoginSuccess }) {
         password: password,
       });
       if (onLoginSuccess) {
-        onLoginSuccess(data.patient_id);
+        onLoginSuccess(data.patient_id, data.role || 'patient');
       }
     } catch (err) {
       console.error('Login error:', err);
-      setErrorMessage(err.message || 'Invalid patient ID or password.');
+      setErrorMessage(err.message || 'Invalid credentials.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fillDemoCredentials = (demoId) => {
+  const fillDemoCredentials = (demoId, demoPwd = null) => {
     setPatientId(demoId);
-    setPassword(demoId);
+    setPassword(demoPwd || demoId);
     setErrorMessage(null);
   };
 
@@ -41,10 +41,10 @@ export function Login({ onLoginSuccess }) {
       <div className="login-card">
         <div className="login-header">
           <div className="login-icon-badge">
-            <span className="login-icon">🩺</span>
+            <span className="login-icon">🏥</span>
           </div>
           <h1>Medical NLP Assistant</h1>
-          <p className="login-subtitle">Hospital Patient Portal</p>
+          <p className="login-subtitle">Hospital Portal &amp; Admin System</p>
         </div>
 
         {errorMessage && (
@@ -56,11 +56,11 @@ export function Login({ onLoginSuccess }) {
 
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label htmlFor="patientId">Patient ID</label>
+            <label htmlFor="patientId">Patient ID / Username</label>
             <input
               id="patientId"
               type="text"
-              placeholder="e.g. P017"
+              placeholder="e.g. P017 or admin"
               value={patientId}
               onChange={(e) => setPatientId(e.target.value)}
               required
@@ -92,7 +92,7 @@ export function Login({ onLoginSuccess }) {
                 <span className="spinner-dot"></span> Authenticating...
               </span>
             ) : (
-              'Sign In to Patient Portal'
+              'Sign In'
             )}
           </button>
         </form>
@@ -102,11 +102,11 @@ export function Login({ onLoginSuccess }) {
           <div className="demo-chips">
             <button
               type="button"
-              className="demo-chip"
-              onClick={() => fillDemoCredentials('P017')}
-              title="Click to fill P017 credentials"
+              className="demo-chip demo-chip-admin"
+              onClick={() => fillDemoCredentials('admin', 'Admin@123')}
+              title="Click to fill Admin credentials"
             >
-              👤 Patient P017
+              👑 Administrator
             </button>
             <button
               type="button"
@@ -116,8 +116,16 @@ export function Login({ onLoginSuccess }) {
             >
               👤 Patient P001
             </button>
+            <button
+              type="button"
+              className="demo-chip"
+              onClick={() => fillDemoCredentials('P017')}
+              title="Click to fill P017 credentials"
+            >
+              👤 Patient P017
+            </button>
           </div>
-          <p className="demo-note">Password equals Patient ID for demo hospital accounts.</p>
+          <p className="demo-note">Admin: admin / Admin@123 | Patients: P001 / P001</p>
         </div>
       </div>
     </div>

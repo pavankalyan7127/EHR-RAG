@@ -72,6 +72,21 @@ def seed_users():
         else:
             seeded_count += 1
 
+    # Ensure default administrator account is provisioned
+    existing_admin = get_user("admin")
+    if not existing_admin:
+        admin_doc = {
+            "_id": "admin",
+            "patient_id": "admin",
+            "password_hash": hash_password("Admin@123"),
+            "role": "admin",
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now
+        }
+        upsert_user(admin_doc)
+        logger.info("Admin user 'admin' provisioned (role: admin).")
+
     logger.info(
         f"User provisioning completed successfully: {seeded_count} newly created, "
         f"{updated_count} updated. Total users: {len(patient_ids)}."

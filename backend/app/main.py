@@ -10,6 +10,7 @@ from app.routes.auth import router as auth_router
 from app.routes.chat import router as chat_router
 from app.routes.voice import router as voice_router
 from app.routes.patients import router as patients_router
+from app.routes.admin import router as admin_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,6 +70,7 @@ app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(voice_router)
 app.include_router(patients_router)
+app.include_router(admin_router)
 
 @app.get("/", tags=["Health"])
 async def root_health():

@@ -1,5 +1,6 @@
 import logging
 from typing import List, Dict, Any, Tuple
+from datetime import datetime
 import os
 import numpy as np
 from app.core.embeddings import vector_store
@@ -139,12 +140,23 @@ def retrieve_context(
         query=query,
         top_k=top_k_ehr
     )
+
+    # Sort selected patient records chronologically by recorded_at/created_at
+    # to provide Gemini with a coherent clinical progression timeline
+    def _get_sort_key(r):
+        val = r.get("recorded_at") or r.get("created_at")
+        if isinstance(val, datetime):
+            return val
+        return datetime.min
+
+    selected_patient_records = sorted(selected_patient_records, key=_get_sort_key)
     external_chunks = search_external_knowledge(query, top_k=top_k_external)
     return selected_patient_records, external_chunks
 
 def build_context_block(patient_id: str, patient_records: List[Dict[str, Any]], external_chunks: List[Dict[str, Any]]) -> str:
     """
     Builds a clearly formatted context block separating Patient Record from External Medical Knowledge.
+    Preserves temporal provenance (recorded_at timestamps) and record types for each medical record.
     """
     context_parts = []
 
@@ -153,8 +165,16 @@ def build_context_block(patient_id: str, patient_records: List[Dict[str, Any]], 
         ehr_blocks = []
         for rec in patient_records:
             chunk_id = rec.get("chunk_id") or rec.get("_id", "ehr_unknown")
+            chunk_type = rec.get("chunk_type", "clinical_note")
+            rec_date = rec.get("recorded_at") or rec.get("created_at")
+            if isinstance(rec_date, datetime):
+                date_str = rec_date.strftime("%Y-%m-%d %H:%M UTC")
+            elif rec_date:
+                date_str = str(rec_date)
+            else:
+                date_str = "Unspecified Date"
             content = (rec.get("content") or rec.get("text") or "").strip()
-            ehr_blocks.append(f"[Chunk ID: {chunk_id}]\n{content}")
+            ehr_blocks.append(f"[Record ID: {chunk_id} | Type: {chunk_type} | Recorded: {date_str}]\n{content}")
         
         context_parts.append(
             f"=== PATIENT EHR RECORD (Patient ID: {patient_id}) ===\n" + "\n\n".join(ehr_blocks)

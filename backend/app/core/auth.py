@@ -53,9 +53,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
-def create_access_token(patient_id: str, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(patient_id: str, role: str = "patient", expires_delta: Optional[timedelta] = None) -> str:
     """
-    Creates a signed JWT access token identifying the patient via the 'sub' claim.
+    Creates a signed JWT access token identifying the user via the 'sub' claim
+    and embedding their authorized role ('patient' or 'admin').
     """
     now = datetime.now(timezone.utc)
     if expires_delta:
@@ -65,7 +66,7 @@ def create_access_token(patient_id: str, expires_delta: Optional[timedelta] = No
 
     to_encode = {
         "sub": patient_id,
-        "role": "patient",
+        "role": role,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp())
     }
@@ -140,3 +141,22 @@ async def get_current_patient_flexible(
     """
     raw_token = credentials.credentials if (credentials and credentials.credentials) else token
     return _validate_token_and_get_patient(raw_token)
+
+
+async def require_admin(
+    current_user: AuthenticatedPatient = Depends(get_current_patient)
+) -> AuthenticatedPatient:
+    """
+    FastAPI dependency to enforce administrative role (role == 'admin').
+    Rejects patient accounts with 403 Forbidden.
+    """
+    if current_user.role != "admin":
+        logger.warning(
+            f"Unauthorized administrative access rejected for user '{current_user.patient_id}' (role: '{current_user.role}')."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrative privileges required."
+        )
+    return current_user
+

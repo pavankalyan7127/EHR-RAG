@@ -22,19 +22,22 @@ class PatientDocument(BaseModel):
     name: str = Field(..., description="Patient name or display label")
     age: Optional[int] = Field(None, description="Patient age in years")
     gender: Optional[str] = Field(None, description="Patient gender")
+    last_ehr_seq: int = Field(default=0, description="Highest monotonic EHR sequence number generated for this patient")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Creation timestamp in UTC")
 
     model_config = ConfigDict(populate_by_name=True)
 
 
 class EHRRecordDocument(BaseModel):
-    id: str = Field(..., alias="_id", description="Unique EHR record identifier, e.g. 'ehr_P001'")
+    id: str = Field(..., alias="_id", description="Unique EHR record identifier, e.g. 'ehr_P001_001'")
     patient_id: str = Field(..., description="Associated patient identifier, e.g. 'P001'")
-    chunk_id: str = Field(..., description="Chunk ID for provenance citation, e.g. 'ehr_P001'")
+    chunk_id: str = Field(..., description="Chunk ID for provenance citation, e.g. 'ehr_P001_001'")
     chunk_type: str = Field(default="clinical_note", description="Category or chunk type, e.g. 'clinical_note', 'medication'")
     content: str = Field(..., description="Text content of the EHR record note")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional structured metadata")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Creation timestamp in UTC")
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When the medical event/consultation occurred in UTC")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When record was entered into the system in UTC")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When record was last modified in UTC")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -77,7 +80,8 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str = Field(..., description="JWT Bearer access token")
     token_type: str = Field(default="bearer", description="Token type")
-    patient_id: str = Field(..., description="Authenticated patient identifier")
+    patient_id: str = Field(..., description="Authenticated user / patient identifier")
+    role: str = Field(default="patient", description="User role ('patient' or 'admin')")
 
 
 class PatientProfileResponse(BaseModel):
@@ -147,3 +151,59 @@ class DeleteSessionResponse(BaseModel):
 
 class PatientsResponse(BaseModel):
     patients: List[str] = Field(..., description="List of available patient IDs for selection")
+
+
+# ==============================================================================
+# Admin Dashboard Schemas
+# ==============================================================================
+
+class AdminPatientItem(BaseModel):
+    patient_id: str = Field(..., description="Unique patient identifier, e.g. 'P001'")
+    name: str = Field(..., description="Patient full name")
+    age: Optional[int] = Field(None, description="Patient age")
+    gender: Optional[str] = Field(None, description="Patient gender")
+    is_active: bool = Field(default=True, description="Account active status")
+    record_count: int = Field(default=0, description="Total number of EHR records")
+    created_at: Optional[datetime] = Field(None, description="Account creation timestamp")
+
+
+class AdminPatientCreate(BaseModel):
+    patient_id: Optional[str] = Field(None, description="Optional custom patient ID (e.g. 'P031'). If omitted, automatically generated.")
+    name: str = Field(..., min_length=1, description="Patient full name")
+    age: Optional[int] = Field(None, ge=0, le=130, description="Patient age")
+    gender: Optional[str] = Field(None, description="Patient gender ('Male', 'Female', etc.)")
+    password: Optional[str] = Field(None, description="Initial account password (defaults to patient_id)")
+
+
+class AdminPatientUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, description="Updated patient name")
+    age: Optional[int] = Field(None, ge=0, le=130, description="Updated age")
+    gender: Optional[str] = Field(None, description="Updated gender")
+    is_active: Optional[bool] = Field(None, description="Activate or deactivate account")
+
+
+class AdminRecordCreate(BaseModel):
+    content: str = Field(..., min_length=1, description="Medical note / consultation text")
+    chunk_type: str = Field(default="clinical_note", description="Record type ('clinical_note', 'medication', 'lab_result', etc.)")
+    recorded_at: Optional[datetime] = Field(None, description="When medical consultation/event occurred in UTC (defaults to current time)")
+
+
+class AdminRecordUpdate(BaseModel):
+    content: Optional[str] = Field(None, min_length=1, description="Updated note text")
+    chunk_type: Optional[str] = Field(None, description="Updated record type")
+    recorded_at: Optional[datetime] = Field(None, description="Updated consultation timestamp in UTC")
+
+
+class AdminRecordResponse(BaseModel):
+    id: str = Field(..., alias="_id", description="Unique EHR record identifier, e.g. 'ehr_P001_001'")
+    patient_id: str = Field(..., description="Associated patient identifier")
+    chunk_id: str = Field(..., description="Chunk ID for provenance citation")
+    chunk_type: str = Field(default="clinical_note", description="Category or chunk type")
+    content: str = Field(..., description="EHR note text")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadata dictionary")
+    recorded_at: datetime = Field(..., description="Timestamp when event occurred")
+    created_at: datetime = Field(..., description="Timestamp when entered in system")
+    updated_at: datetime = Field(..., description="Timestamp when last modified")
+
+    model_config = ConfigDict(populate_by_name=True)
+

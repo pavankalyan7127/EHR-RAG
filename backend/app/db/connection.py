@@ -121,6 +121,10 @@ class MongoDBManager:
             # EHR Records indexes
             self._db["ehr_records"].create_index([("patient_id", ASCENDING)], background=True)
             self._db["ehr_records"].create_index(
+                [("patient_id", ASCENDING), ("recorded_at", DESCENDING)],
+                background=True
+            )
+            self._db["ehr_records"].create_index(
                 [("patient_id", ASCENDING), ("chunk_id", ASCENDING)],
                 unique=True,
                 background=True

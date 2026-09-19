@@ -96,7 +96,7 @@ def run_tests(mock_gen):
         print(f"Assistant Answer: {chat_data['answer'][:120]}...")
         print(f"Patient Sources: {chat_data['patient_sources']}")
         print(f"External Sources: {chat_data['external_sources']}")
-        assert "ehr_P001" in chat_data["patient_sources"]
+        assert any("ehr_P001" in s for s in chat_data["patient_sources"])
         assert len(chat_data["history"]) == 2
 
         # Verify Session document in MongoDB

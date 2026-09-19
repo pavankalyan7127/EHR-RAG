@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 /**
  * MessageBubble Component
@@ -147,10 +148,20 @@ export function MessageBubble({ message }) {
           {isVoice ? (
             <div className="voice-transcript-block">
               <span className="transcript-label">Transcript:</span>
-              <div className="transcript-text">{content}</div>
+              {isUser ? (
+                <div className="transcript-text">{content}</div>
+              ) : (
+                <div className="transcript-text markdown-body">
+                  <ReactMarkdown>{content}</ReactMarkdown>
+                </div>
+              )}
             </div>
-          ) : (
+          ) : isUser ? (
             <div className="message-content">{content}</div>
+          ) : (
+            <div className="message-content markdown-body">
+              <ReactMarkdown>{content}</ReactMarkdown>
+            </div>
           )}
           <div className="message-meta">
             <span className="message-time">{timestamp}</span>

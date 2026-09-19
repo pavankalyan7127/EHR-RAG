@@ -80,24 +80,28 @@ def seed_database():
             "name": f"Patient {patient_id}",
             "age": age,
             "gender": gender,
+            "last_ehr_seq": len(p_chunks),
             "created_at": now
         }
         upsert_patient(patient_doc)
         seeded_patients_count += 1
 
         # Seed each EHR record for this patient
-        for chunk in p_chunks:
+        for idx, chunk in enumerate(p_chunks, 1):
+            rec_id = f"ehr_{patient_id}_{idx:03d}"
             record_doc = {
-                "_id": chunk.get("chunk_id", f"ehr_{patient_id}"),
+                "_id": rec_id,
                 "patient_id": patient_id,
-                "chunk_id": chunk.get("chunk_id", f"ehr_{patient_id}"),
+                "chunk_id": rec_id,
                 "chunk_type": "clinical_note",
                 "content": chunk.get("text", "").strip(),
                 "metadata": {
                     "source": "EHR",
                     "source_type": chunk.get("source_type", "ehr"),
                 },
-                "created_at": now
+                "recorded_at": now,
+                "created_at": now,
+                "updated_at": now
             }
             upsert_ehr_record(record_doc)
             seeded_records_count += 1

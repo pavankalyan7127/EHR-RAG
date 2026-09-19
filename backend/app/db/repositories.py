@@ -1,3 +1,4 @@
+import re
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -64,6 +65,55 @@ def get_all_patients() -> List[Dict[str, Any]]:
     col = get_patients_collection()
     return list(col.find({}).sort("_id", ASCENDING))
 
+def generate_next_patient_id() -> str:
+    """
+    Generates the next available patient ID (e.g. 'P031') by inspecting existing IDs.
+    Guarantees no collisions.
+    """
+    col = get_patients_collection()
+    docs = col.find({}, {"_id": 1})
+    max_num = 0
+    for doc in docs:
+        pid = doc.get("_id", "")
+        match = re.match(r"^P(\d+)$", pid, re.IGNORECASE)
+        if match:
+            max_num = max(max_num, int(match.group(1)))
+    next_num = max_num + 1 if max_num > 0 else 1
+    return f"P{next_num:03d}"
+
+def get_all_patients_with_metadata() -> List[Dict[str, Any]]:
+    """
+    Retrieves all patients augmented with account status (is_active) and EHR record count.
+    Used by the Admin Dashboard.
+    """
+    patients_col = get_patients_collection()
+    users_col = get_users_collection()
+    ehr_col = get_ehr_records_collection()
+
+    patients = list(patients_col.find({}).sort("_id", ASCENDING))
+    users = {u["patient_id"]: u for u in users_col.find({})}
+
+    # Aggregate record counts by patient_id
+    pipeline = [
+        {"$group": {"_id": "$patient_id", "count": {"$sum": 1}}}
+    ]
+    counts_map = {item["_id"]: item["count"] for item in ehr_col.aggregate(pipeline)}
+
+    results = []
+    for p in patients:
+        pid = p["_id"]
+        user_info = users.get(pid, {})
+        results.append({
+            "patient_id": pid,
+            "name": p.get("name", f"Patient {pid}"),
+            "age": p.get("age"),
+            "gender": p.get("gender"),
+            "is_active": user_info.get("is_active", True),
+            "record_count": counts_map.get(pid, 0),
+            "created_at": p.get("created_at")
+        })
+    return results
+
 def upsert_patient(patient_data: Dict[str, Any]) -> str:
     """
     Inserts or updates a patient document idempotently.
@@ -80,23 +130,191 @@ def upsert_patient(patient_data: Dict[str, Any]) -> str:
     col.replace_one({"_id": patient_id}, patient_data, upsert=True)
     return patient_id
 
+def update_patient_demographics(patient_id: str, update_fields: Dict[str, Any]) -> bool:
+    """Updates demographic fields (name, age, gender) for a patient."""
+    col = get_patients_collection()
+    allowed = {k: v for k, v in update_fields.items() if k in ["name", "age", "gender"] and v is not None}
+    if not allowed:
+        return False
+    res = col.update_one({"_id": patient_id}, {"$set": allowed})
+    return res.matched_count > 0
 
-# ==============================================================================
-# EHR Record Repository
-# ==============================================================================
-
-def get_ehr_records_by_patient(patient_id: str) -> List[Dict[str, Any]]:
+def set_patient_active_status(patient_id: str, is_active: bool) -> bool:
     """
-    Retrieves all EHR clinical note chunks belonging strictly to a patient_id.
+    Activates or deactivates a patient account in the users collection.
+    Preserves all patient data, EHR records, sessions, and audio.
+    """
+    users_col = get_users_collection()
+    now = datetime.now(timezone.utc)
+    res = users_col.update_one(
+        {"patient_id": patient_id},
+        {"$set": {"is_active": is_active, "updated_at": now}}
+    )
+    return res.matched_count > 0
+
+def delete_patient_cascade(patient_id: str) -> bool:
+    """
+    Destructive permanent removal of patient profile, user credentials,
+    all EHR records, chat sessions, messages, and referenced voice recordings.
+    """
+    # 1. Clean up sessions, messages, and audio
+    sessions = get_sessions_by_patient(patient_id)
+    for s in sessions:
+        delete_messages_for_patient_session(s["_id"], patient_id)
+        delete_session_for_patient(s["_id"], patient_id)
+
+    # 2. Clean up all EHR records
+    ehr_col = get_ehr_records_collection()
+    ehr_col.delete_many({"patient_id": patient_id})
+
+    # 3. Clean up user
+    users_col = get_users_collection()
+    users_col.delete_one({"patient_id": patient_id})
+
+    # 4. Clean up patient profile
+    patients_col = get_patients_collection()
+    res = patients_col.delete_one({"_id": patient_id})
+    return res.deleted_count > 0
+
+
+# ==============================================================================
+# EHR Record Repository (1 Patient -> Many EHR Records)
+# ==============================================================================
+
+def generate_next_ehr_id(patient_id: str) -> str:
+    """
+    Generates the next monotonic sequence EHR record ID (e.g. 'ehr_P001_004').
+    
+    GUARANTEES:
+    - Strictly monotonic sequence number.
+    - Sequences are NEVER reused even if intermediate records are deleted.
+    - Inspects both patient.last_ehr_seq and any existing records to ensure forward progression.
+    """
+    patients_col = get_patients_collection()
+    ehr_col = get_ehr_records_collection()
+
+    patient_doc = patients_col.find_one({"_id": patient_id})
+    stored_seq = patient_doc.get("last_ehr_seq", 0) if patient_doc else 0
+
+    # Scan existing records for patient to check current highest suffix
+    existing_records = ehr_col.find({"patient_id": patient_id}, {"_id": 1, "chunk_id": 1})
+    max_present = 0
+    pattern = re.compile(rf"^ehr_{re.escape(patient_id)}_(\d+)$", re.IGNORECASE)
+    for rec in existing_records:
+        rec_id = rec.get("_id", "")
+        match = pattern.match(rec_id)
+        if match:
+            max_present = max(max_present, int(match.group(1)))
+
+    next_seq = max(stored_seq, max_present) + 1
+
+    # Persist the incremented monotonic sequence to the patient record
+    patients_col.update_one(
+        {"_id": patient_id},
+        {"$set": {"last_ehr_seq": next_seq}},
+        upsert=False
+    )
+
+    return f"ehr_{patient_id}_{next_seq:03d}"
+
+def get_ehr_records_by_patient(patient_id: str, sort_newest_first: bool = False) -> List[Dict[str, Any]]:
+    """
+    Retrieves all EHR clinical records belonging strictly to a patient_id.
     Guarantees deterministic, patient-isolated record retrieval.
+    Sorts chronologically (by recorded_at or created_at).
     """
     col = get_ehr_records_collection()
-    return list(col.find({"patient_id": patient_id}).sort("created_at", ASCENDING))
+    sort_dir = DESCENDING if sort_newest_first else ASCENDING
+    return list(col.find({"patient_id": patient_id}).sort([("recorded_at", sort_dir), ("created_at", sort_dir)]))
+
+def get_ehr_record_by_id(record_id: str, patient_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Retrieves a single EHR record by ID, optionally validating patient ownership."""
+    col = get_ehr_records_collection()
+    query: Dict[str, Any] = {"_id": record_id}
+    if patient_id:
+        query["patient_id"] = patient_id
+    return col.find_one(query)
+
+def create_ehr_record(
+    patient_id: str,
+    content: str,
+    chunk_type: str = "clinical_note",
+    recorded_at: Optional[datetime] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Creates a new medical record document for a patient with auto-generated sequence ID.
+    Enforces monotonic ID allocation (no reuse).
+    Separates recorded_at (event time), created_at (entry time), and updated_at (modification time).
+    """
+    col = get_ehr_records_collection()
+    record_id = generate_next_ehr_id(patient_id)
+    now = datetime.now(timezone.utc)
+    rec_time = recorded_at if recorded_at is not None else now
+
+    doc = {
+        "_id": record_id,
+        "patient_id": patient_id,
+        "chunk_id": record_id,
+        "chunk_type": chunk_type or "clinical_note",
+        "content": content.strip(),
+        "metadata": metadata or {
+            "source": "EHR",
+            "source_type": "ehr"
+        },
+        "recorded_at": rec_time,
+        "created_at": now,
+        "updated_at": now
+    }
+    col.insert_one(doc)
+    logger.info(f"Created new EHR record '{record_id}' for patient '{patient_id}'.")
+    return doc
+
+def update_ehr_record(
+    record_id: str,
+    patient_id: str,
+    content: Optional[str] = None,
+    chunk_type: Optional[str] = None,
+    recorded_at: Optional[datetime] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Updates an existing EHR record. Updates updated_at timestamp.
+    Enforces patient ownership verification.
+    """
+    col = get_ehr_records_collection()
+    now = datetime.now(timezone.utc)
+    updates: Dict[str, Any] = {"updated_at": now}
+
+    if content is not None:
+        updates["content"] = content.strip()
+    if chunk_type is not None:
+        updates["chunk_type"] = chunk_type
+    if recorded_at is not None:
+        updates["recorded_at"] = recorded_at
+
+    res = col.find_one_and_update(
+        {"_id": record_id, "patient_id": patient_id},
+        {"$set": updates},
+        return_document=True
+    )
+    return res
+
+def delete_ehr_record(record_id: str, patient_id: Optional[str] = None) -> bool:
+    """
+    Deletes a specific medical record document from ehr_records.
+    Sequence numbers are never reused upon deletion.
+    """
+    col = get_ehr_records_collection()
+    query: Dict[str, Any] = {"_id": record_id}
+    if patient_id:
+        query["patient_id"] = patient_id
+    res = col.delete_one(query)
+    return res.deleted_count > 0
 
 def upsert_ehr_record(record_data: Dict[str, Any]) -> str:
     """
     Inserts or updates an EHR record document idempotently.
-    Requires '_id' or ('patient_id' and 'chunk_id').
+    Ensures recorded_at, created_at, updated_at are properly set.
     """
     col = get_ehr_records_collection()
     record_id = record_data.get("_id")
@@ -111,8 +329,13 @@ def upsert_ehr_record(record_data: Dict[str, Any]) -> str:
             record_id = f"ehr_{uuid.uuid4().hex[:8]}"
             record_data["_id"] = record_id
 
+    now = datetime.now(timezone.utc)
     if "created_at" not in record_data:
-        record_data["created_at"] = datetime.now(timezone.utc)
+        record_data["created_at"] = now
+    if "recorded_at" not in record_data:
+        record_data["recorded_at"] = record_data["created_at"]
+    if "updated_at" not in record_data:
+        record_data["updated_at"] = now
 
     col.replace_one({"_id": record_id}, record_data, upsert=True)
     return record_id

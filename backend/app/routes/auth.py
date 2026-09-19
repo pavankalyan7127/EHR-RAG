@@ -43,11 +43,13 @@ async def login_endpoint(request: LoginRequest):
         logger.info(f"Failed login attempt: invalid password for patient '{patient_id}'.")
         raise generic_error
 
-    access_token = create_access_token(patient_id=patient_id)
-    logger.info(f"Successful login for patient '{patient_id}'. JWT token issued.")
+    role = user.get("role", "patient")
+    access_token = create_access_token(patient_id=patient_id, role=role)
+    logger.info(f"Successful login for user '{patient_id}' with role '{role}'. JWT token issued.")
 
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        patient_id=patient_id
+        patient_id=patient_id,
+        role=role
     )
