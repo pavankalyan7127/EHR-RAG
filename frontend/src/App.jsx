@@ -32,6 +32,10 @@ export function App() {
     isLoading,
     isLoadingSessions,
     isLoadingHistory,
+    selectedLanguage,
+    setSelectedLanguage,
+    localizingMessageId,
+    switchMessageLanguage,
     selectSession,
     startNewChat,
     deleteSession,
@@ -97,6 +101,8 @@ export function App() {
         onLogout={handleLogout}
         onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
         isSidebarOpen={isSidebarOpen}
+        selectedLanguage={selectedLanguage}
+        setSelectedLanguage={setSelectedLanguage}
       />
 
       {/* Main Two-Pane Dashboard: Sidebar (Left) + Chat Window & Input (Right) */}
@@ -118,6 +124,8 @@ export function App() {
             isLoading={isLoading || isLoadingHistory}
             selectedPatient={patientId}
             onSelectSuggestedQuestion={(q) => sendMessage(q)}
+            switchMessageLanguage={switchMessageLanguage}
+            localizingMessageId={localizingMessageId}
           />
 
           <InputBar

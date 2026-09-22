@@ -5,7 +5,14 @@ import { MessageBubble } from './MessageBubble';
  * ChatWindow Component
  * Scrollable viewport for continuous multi-turn dialogue with auto-scroll and empty states.
  */
-export function ChatWindow({ messages, isLoading, selectedPatient, onSelectSuggestedQuestion }) {
+export function ChatWindow({
+  messages,
+  isLoading,
+  selectedPatient,
+  onSelectSuggestedQuestion,
+  switchMessageLanguage,
+  localizingMessageId,
+}) {
   const scrollEndRef = useRef(null);
 
   // Auto-scroll to the bottom when new messages arrive or loading state changes
@@ -50,7 +57,12 @@ export function ChatWindow({ messages, isLoading, selectedPatient, onSelectSugge
       ) : (
         <div className="messages-list">
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              onSwitchLanguage={switchMessageLanguage}
+              localizingMessageId={localizingMessageId}
+            />
           ))}
 
           {/* Typing / Processing Indicator */}

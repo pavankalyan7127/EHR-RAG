@@ -11,7 +11,9 @@ from app.models.schemas import (
     DeleteSessionResponse,
     SessionSummary,
     SessionDetailResponse,
-    CreateSessionRequest
+    CreateSessionRequest,
+    LocalizationRequest,
+    LocalizationResponse
 )
 from app.db.repositories import (
     get_patient,
@@ -32,9 +34,13 @@ from app.chat.session_manager import (
     clear_session_for_patient,
     PatientSessionMismatchError
 )
+from app.services.nlp_client import MultilingualNLPClient, NLPServiceError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="", tags=["Chat"])
+
+nlp_client = MultilingualNLPClient()
+SUPPORTED_LANGUAGES = {"en", "bn", "gu", "hi", "mr", "pa", "ta", "te", "ur"}
 
 
 async def process_chat_query(
@@ -251,7 +257,7 @@ async def chat_endpoint(
     current_patient: AuthenticatedPatient = Depends(get_current_patient)
 ):
     """
-    Submits a user message to the multimodal RAG assistant.
+    Submits a user message to the multimodal RAG assistant with multilingual support.
     Security:
     - Derives patient identity strictly from authenticated JWT.
     - If request body supplies a conflicting patient_id, rejects the attempt.
@@ -266,10 +272,126 @@ async def chat_endpoint(
             detail="Cross-patient data access is forbidden."
         )
 
-    return await process_chat_query(
+    # 1. Validate requested target language if explicitly provided
+    requested_target = None
+    if request.target_language:
+        requested_target = request.target_language.strip().lower()
+        if requested_target not in SUPPORTED_LANGUAGES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported target language '{request.target_language}'. Supported languages: {', '.join(sorted(SUPPORTED_LANGUAGES))}"
+            )
+
+    # 2. Process text input via multilingual NLP service (language detection + translation to English)
+    try:
+        nlp_input = await nlp_client.process_text_input(request.message)
+    except NLPServiceError as ne:
+        logger.error(f"Multilingual NLP input processing error: {ne}")
+        raise HTTPException(
+            status_code=ne.status_code if ne.status_code and 400 <= ne.status_code < 600 else status.HTTP_502_BAD_GATEWAY,
+            detail=f"Multilingual NLP service error during input processing: {ne.message}"
+        )
+    except Exception as exc:
+        logger.error(f"Unexpected error communicating with NLP service: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to process message through multilingual NLP service."
+        )
+
+    detected_lang = nlp_input.get("detected_language") or "en"
+    english_text = nlp_input.get("english_text") or request.message
+
+    # 3. Determine output target language
+    target_language = requested_target or detected_lang
+    if target_language not in SUPPORTED_LANGUAGES:
+        target_language = "en"
+
+    # 4. Canonical RAG medical reasoning pipeline (using english_text as query)
+    rag_response = await process_chat_query(
         session_id=request.session_id,
         patient_id=current_patient.patient_id,
-        message_text=request.message
+        message_text=english_text
+    )
+
+    # 5. Localize canonical English answer to target language + generate neural TTS audio
+    try:
+        localized = await nlp_client.localize_output(
+            english_response=rag_response.answer,
+            target_language=target_language
+        )
+    except NLPServiceError as ne:
+        logger.error(f"Multilingual NLP output localization error: {ne}")
+        raise HTTPException(
+            status_code=ne.status_code if ne.status_code and 400 <= ne.status_code < 600 else status.HTTP_502_BAD_GATEWAY,
+            detail=f"Multilingual NLP service error during output localization: {ne.message}"
+        )
+    except Exception as exc:
+        logger.error(f"Unexpected error during output localization: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to localize response through multilingual NLP service."
+        )
+
+    localized_answer = localized.get("native_text") or rag_response.answer
+    audio_base64 = localized.get("audio_base64")
+    audio_format = localized.get("audio_format", "wav")
+
+    return ChatResponse(
+        session_id=rag_response.session_id,
+        answer=localized_answer,
+        canonical_answer=rag_response.answer,
+        patient_sources=rag_response.patient_sources,
+        external_sources=rag_response.external_sources,
+        history=rag_response.history,
+        language=target_language,
+        audio_base64=audio_base64,
+        audio_format=audio_format
+    )
+
+
+@router.post("/chat/localize", response_model=LocalizationResponse)
+async def localize_chat_response(request: LocalizationRequest):
+    """
+    Translates an existing canonical English medical response and generates neural TTS audio
+    in the requested target language without re-executing EHR retrieval or medical reasoning.
+    """
+    target_lang = request.target_language.strip().lower()
+    if target_lang not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported target language '{request.target_language}'. Supported languages: {', '.join(sorted(SUPPORTED_LANGUAGES))}"
+        )
+
+    cleaned_text = request.english_response.strip()
+    if not cleaned_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="English response text cannot be empty."
+        )
+
+    try:
+        localized = await nlp_client.localize_output(
+            english_response=cleaned_text,
+            target_language=target_lang
+        )
+    except NLPServiceError as ne:
+        logger.error(f"Multilingual NLP output localization error: {ne}")
+        raise HTTPException(
+            status_code=ne.status_code if ne.status_code and 400 <= ne.status_code < 600 else status.HTTP_502_BAD_GATEWAY,
+            detail=f"Multilingual NLP service error during output localization: {ne.message}"
+        )
+    except Exception as exc:
+        logger.error(f"Unexpected error during output localization: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to localize response through multilingual NLP service."
+        )
+
+    return LocalizationResponse(
+        target_language=target_lang,
+        native_text=localized.get("native_text") or cleaned_text,
+        audio_base64=localized.get("audio_base64"),
+        audio_format=localized.get("audio_format", "wav")
     )
 
 

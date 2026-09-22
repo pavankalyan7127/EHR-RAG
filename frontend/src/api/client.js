@@ -200,22 +200,31 @@ export async function deleteChatSession(sessionId) {
  * @param {Object} params
  * @param {string} params.sessionId
  * @param {string} params.message
+ * @param {string} [params.targetLanguage]
  * @returns {Promise<{
  *   session_id: string,
  *   answer: string,
+ *   canonical_answer?: string,
+ *   language?: string,
+ *   audio_base64?: string,
+ *   audio_format?: string,
  *   patient_sources: string[],
  *   external_sources: string[],
  *   history: Array<{ role: 'user'|'assistant', content: string }>
  * }>}
  */
-export async function sendChatMessage({ sessionId, message }) {
+export async function sendChatMessage({ sessionId, message, targetLanguage }) {
+  const payload = {
+    session_id: sessionId,
+    message: message.trim(),
+  };
+  if (targetLanguage) {
+    payload.target_language = targetLanguage;
+  }
   const response = await fetch(`${API_BASE_URL}/chat`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: JSON.stringify({
-      session_id: sessionId,
-      message: message.trim(),
-    }),
+    body: JSON.stringify(payload),
   });
   return handleResponse(response);
 }
@@ -227,11 +236,15 @@ export async function sendChatMessage({ sessionId, message }) {
  * @param {string} params.sessionId
  * @param {File|Blob} params.audioBlob
  * @param {string} [params.filename]
+ * @param {string} [params.targetLanguage]
  */
-export async function sendVoiceChatMessage({ sessionId, audioBlob, filename = 'voice_query.wav' }) {
+export async function sendVoiceChatMessage({ sessionId, audioBlob, filename = 'voice_query.wav', targetLanguage }) {
   const formData = new FormData();
   formData.append('session_id', sessionId);
   formData.append('audio', audioBlob, filename);
+  if (targetLanguage) {
+    formData.append('target_language', targetLanguage);
+  }
 
   const token = getAuthToken();
   const headers = {
@@ -245,6 +258,31 @@ export async function sendVoiceChatMessage({ sessionId, audioBlob, filename = 'v
     method: 'POST',
     headers: headers,
     body: formData,
+  });
+  return handleResponse(response);
+}
+
+/**
+ * Localizes an already-generated English medical response into a target language
+ * and generates neural TTS audio without rerunning medical reasoning or RAG retrieval.
+ * @param {Object} params
+ * @param {string} params.englishResponse
+ * @param {string} params.targetLanguage
+ * @returns {Promise<{
+ *   language: string,
+ *   native_text: string,
+ *   audio_base64: string|null,
+ *   audio_format: string|null
+ * }>}
+ */
+export async function localizeChatMessage({ englishResponse, targetLanguage }) {
+  const response = await fetch(`${API_BASE_URL}/chat/localize`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      english_response: englishResponse,
+      target_language: targetLanguage,
+    }),
   });
   return handleResponse(response);
 }

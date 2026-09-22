@@ -6,6 +6,7 @@ import {
   deleteChatSession,
   sendChatMessage,
   sendVoiceChatMessage,
+  localizeChatMessage,
   resolveAudioUrl,
 } from '../api/client';
 
@@ -20,6 +21,8 @@ export function useChat(isAuthenticated) {
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const [localizingMessageId, setLocalizingMessageId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -71,6 +74,10 @@ export function useChat(isAuthenticated) {
         id: m.id || `msg_${sessionId}_${idx}`,
         role: m.role,
         content: m.content,
+        canonicalAnswer: m.canonical_answer || null,
+        language: m.language || null,
+        audioBase64: m.audio_base64 || null,
+        audioFormat: m.audio_format || null,
         timestamp: m.timestamp
           ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -162,17 +169,22 @@ export function useChat(isAuthenticated) {
     setIsLoading(true);
 
     try {
-      // 2. Call backend /chat endpoint
+      // 2. Call backend /chat endpoint with targetLanguage
       const response = await sendChatMessage({
         sessionId: currentId,
         message: trimmedText,
+        targetLanguage: selectedLanguage,
       });
 
-      // 3. Append assistant response
+      // 3. Append assistant response with multilingual fields
       const assistantMsgObj = {
         id: 'msg_ast_' + Date.now(),
         role: 'assistant',
         content: response.answer,
+        canonicalAnswer: response.canonical_answer || response.answer,
+        language: response.language || selectedLanguage,
+        audioBase64: response.audio_base64 || null,
+        audioFormat: response.audio_format || null,
         patientSources: response.patient_sources || [],
         externalSources: response.external_sources || [],
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -196,7 +208,7 @@ export function useChat(isAuthenticated) {
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, startNewChat, loadSessionsList]);
+  }, [isLoading, startNewChat, loadSessionsList, selectedLanguage]);
 
   /**
    * Sends a recorded voice query in the current session.
@@ -230,6 +242,7 @@ export function useChat(isAuthenticated) {
         sessionId: currentId,
         audioBlob,
         filename,
+        targetLanguage: selectedLanguage,
       });
 
       const serverAudioUrl = resolveAudioUrl(response.audio_url);
@@ -253,6 +266,10 @@ export function useChat(isAuthenticated) {
         id: 'msg_ast_' + Date.now(),
         role: 'assistant',
         content: response.answer,
+        canonicalAnswer: response.canonical_answer || response.answer,
+        language: response.language || selectedLanguage,
+        audioBase64: response.audio_base64 || null,
+        audioFormat: response.audio_format || null,
         patientSources: response.patient_sources || [],
         externalSources: response.external_sources || [],
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -277,7 +294,62 @@ export function useChat(isAuthenticated) {
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, startNewChat, loadSessionsList]);
+  }, [isLoading, startNewChat, loadSessionsList, selectedLanguage]);
+
+  /**
+   * Switches the language of an existing assistant response without rerunning medical reasoning.
+   */
+  const switchMessageLanguage = useCallback(
+    async (messageId, targetLanguage) => {
+      if (!messageId || !targetLanguage) return;
+
+      // A. Find the assistant message with message.id === messageId
+      const targetMsg = messages.find((m) => m.id === messageId && m.role === 'assistant');
+
+      // B. If it does not exist, return without making an API request
+      if (!targetMsg) return;
+
+      // C. Get the canonical English answer
+      const englishAnswer = targetMsg.canonicalAnswer;
+
+      // D. If canonicalAnswer is missing, do not call the API. Preserve the current message.
+      if (!englishAnswer) return;
+
+      if (localizingMessageId === messageId) return;
+
+      setLocalizingMessageId(messageId);
+      setError(null);
+
+      try {
+        // E. Call localizeChatMessage
+        const response = await localizeChatMessage({
+          englishResponse: englishAnswer,
+          targetLanguage,
+        });
+
+        // G. Update ONLY the matching message in the messages state
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId
+              ? {
+                  ...msg,
+                  content: response.native_text,
+                  language: response.target_language || targetLanguage,
+                  audioBase64: response.audio_base64 || null,
+                  audioFormat: response.audio_format || null,
+                }
+              : msg
+          )
+        );
+      } catch (err) {
+        console.error(`Failed to localize message ${messageId}:`, err);
+        setError(err.message || 'Failed to switch language.');
+      } finally {
+        setLocalizingMessageId(null);
+      }
+    },
+    [messages, localizingMessageId]
+  );
 
   // Initial load when user becomes authenticated
   useEffect(() => {
@@ -298,6 +370,10 @@ export function useChat(isAuthenticated) {
     isLoadingSessions,
     isLoadingHistory,
     error,
+    selectedLanguage,
+    setSelectedLanguage,
+    localizingMessageId,
+    switchMessageLanguage,
     loadSessionsList,
     selectSession,
     startNewChat,

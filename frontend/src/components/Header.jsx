@@ -1,6 +1,14 @@
 import React from 'react';
 
-export function Header({ patientProfile, patientId, onLogout, onToggleSidebar, isSidebarOpen }) {
+export function Header({
+  patientProfile,
+  patientId,
+  onLogout,
+  onToggleSidebar,
+  isSidebarOpen,
+  selectedLanguage = 'en',
+  setSelectedLanguage = () => {},
+}) {
   const displayName = patientProfile?.name || `Patient ${patientId}`;
 
   return (
@@ -31,6 +39,29 @@ export function Header({ patientProfile, patientId, onLogout, onToggleSidebar, i
             <span className="patient-name">{displayName}</span>
             <span className="patient-id-tag">ID: {patientId}</span>
           </div>
+        </div>
+
+        <div className="header-language-selector">
+          <label htmlFor="header-language-select" className="header-language-label">
+            Language
+          </label>
+          <select
+            id="header-language-select"
+            className="header-language-select"
+            value={selectedLanguage}
+            onChange={(e) => setSelectedLanguage(e.target.value)}
+            aria-label="Select conversation language"
+          >
+            <option value="en">English</option>
+            <option value="bn">বাংলা</option>
+            <option value="gu">ગુજરાતી</option>
+            <option value="hi">हिन्दी</option>
+            <option value="mr">मराठी</option>
+            <option value="pa">ਪੰਜਾਬੀ</option>
+            <option value="ta">தமிழ்</option>
+            <option value="te">తెలుగు</option>
+            <option value="ur">اردو</option>
+          </select>
         </div>
 
         <button

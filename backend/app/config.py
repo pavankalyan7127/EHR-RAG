@@ -17,6 +17,10 @@ FAISS_INDEX_PATH = DATA_DIR / "faiss_index.bin"
 
 WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL_NAME", "base")
 
+# Multilingual NLP Service (Google Colab deployment)
+NLP_SERVICE_URL = os.getenv("NLP_SERVICE_URL", "https://shredder-cherisher-cloning.ngrok-free.dev").rstrip("/")
+NLP_TIMEOUT_SECONDS = float(os.getenv("NLP_TIMEOUT_SECONDS", "120.0"))
+
 MONGODB_URI = os.getenv("MONGODB_URI", "")
 MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "ehr_rag_db")
 

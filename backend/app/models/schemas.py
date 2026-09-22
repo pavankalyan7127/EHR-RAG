@@ -107,6 +107,7 @@ class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, description="Unique session identifier for multi-turn chat")
     message: str = Field(..., min_length=1, description="User question or query text")
     patient_id: Optional[str] = Field(None, description="Optional patient ID (derived automatically from auth token)")
+    target_language: Optional[str] = Field(None, description="Optional target language code (e.g. 'en', 'bn', 'gu', 'hi', 'mr', 'pa', 'ta', 'te', 'ur')")
 
 
 class ChatResponse(BaseModel):
@@ -115,12 +116,28 @@ class ChatResponse(BaseModel):
     patient_sources: List[str] = Field(default_factory=list, description="List of patient EHR chunk IDs or descriptions used")
     external_sources: List[str] = Field(default_factory=list, description="List of external knowledge chunk IDs used")
     history: List[ChatMessage] = Field(default_factory=list, description="Updated multi-turn conversation history for this session")
+    language: Optional[str] = Field(None, description="Language of the returned answer, e.g. 'en', 'ta', 'te', 'hi'")
+    audio_base64: Optional[str] = Field(None, description="Base64-encoded neural TTS audio for the returned answer")
+    audio_format: Optional[str] = Field(None, description="Audio format of the generated TTS audio, e.g. 'wav'")
+    canonical_answer: Optional[str] = Field(None, description="Canonical English medical answer produced by RAG reasoning")
 
 
 class VoiceChatResponse(ChatResponse):
-    transcribed_text: str = Field(..., description="Transcribed query recognized by Whisper ASR")
+    transcribed_text: str = Field(..., description="Transcribed user query produced by the multilingual NLP service")
     audio_file_id: Optional[str] = Field(None, description="GridFS audio file ID")
     audio_url: Optional[str] = Field(None, description="Audio playback URL for the original recording")
+
+
+class LocalizationRequest(BaseModel):
+    english_response: str = Field(..., min_length=1, description="Canonical English medical response to localize")
+    target_language: str = Field(..., description="Target language code, e.g. 'en', 'bn', 'gu', 'hi', 'mr', 'pa', 'ta', 'te', 'ur'")
+
+
+class LocalizationResponse(BaseModel):
+    target_language: str = Field(..., description="Target language code")
+    native_text: str = Field(..., description="Localized response text in the target language")
+    audio_base64: Optional[str] = Field(None, description="Base64-encoded neural TTS audio")
+    audio_format: Optional[str] = Field(default="wav", description="Audio format of the generated TTS audio, e.g. 'wav'")
 
 
 # Session Management Schemas
